@@ -12,7 +12,7 @@ env/
 yolo_env/
 
 # Model files
-models/*.pt
+# models/*.pt
 models/*.pth
 
 # Logs
