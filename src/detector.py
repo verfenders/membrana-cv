@@ -7,9 +7,9 @@ YOLO Object Detector with Basler Camera
 import json
 import time
 import logging
-from loguru import logger
 import os
 import sys
+from loguru import logger
 
 class YOLODetector:
     def __init__(self, model_path, conf_threshold=0.5, headless=False):
@@ -92,8 +92,10 @@ class YOLODetector:
                 
                 # Fallback: отключаем безопасную загрузку
                 try:
-                    import os
+                    # Устанавливаем переменную окружения ДО импорта
                     os.environ['TORCH_LOAD_DISABLE_SAFE_GLOBALS'] = '1'
+                    # Переимпортируем YOLO после установки переменной
+                    from ultralytics import YOLO
                     self.model = YOLO(self.model_path)
                     logger.info("✅ Model loaded with disabled safe globals")
                     
