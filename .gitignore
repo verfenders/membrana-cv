@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+
+# Virtual environments
+venv/
+env/
+yolo_env/
+
+# Model files
+models/*.pt
+models/*.pth
+
+# Logs
+*.log
+logs/
+
+# Data
+*.jpg
+*.png
+*.json
+data/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

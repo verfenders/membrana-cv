@@ -1,0 +1,8 @@
+ultralytics==8.1.47
+pypylon>=2.1.1
+psutil>=5.9.8
+loguru>=0.7.2
+opencv-python>=4.9.0.80
+numpy>=1.26.4
+pillow>=10.2.0
+pyyaml>=6.0.1
