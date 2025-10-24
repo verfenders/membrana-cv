@@ -2,9 +2,9 @@
 import argparse
 import sys
 import os
-import time  # Добавляем импорт time
+import time
 
-# Комплексное решение для PyTorch 2.6 на Windows
+# Complex solution for PyTorch 2.6 on Windows
 os.environ['TORCH_LOAD_DISABLE_SAFE_GLOBALS'] = '1'
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
