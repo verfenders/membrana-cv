@@ -2,6 +2,11 @@
 import argparse
 import sys
 import os
+import time  # Добавляем импорт time
+
+# Комплексное решение для PyTorch 2.6 на Windows
+os.environ['TORCH_LOAD_DISABLE_SAFE_GLOBALS'] = '1'
+
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 from detector import YOLODetector
@@ -14,6 +19,10 @@ def main():
     
     args = parser.parse_args()
     
+    print(f"Loading model from: {args.model}")
+    print(f"Confidence threshold: {args.conf}")
+    print(f"Headless mode: {args.headless}")
+    
     detector = YOLODetector(
         model_path=args.model,
         conf_threshold=args.conf,
@@ -21,10 +30,14 @@ def main():
     )
     
     try:
+        print("Starting detection...")
         detector.run()
     except KeyboardInterrupt:
-        print("Stopped by user")
+        print("\nStopped by user")
+    except Exception as e:
+        print(f"Error occurred: {e}")
     finally:
+        print("Cleaning up...")
         detector.cleanup()
 
 if __name__ == "__main__":

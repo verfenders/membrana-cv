@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 YOLO Object Detector with Basler Camera
-Автор: [Ваше имя]
 """
 
 import json
@@ -9,6 +8,21 @@ import time
 import logging
 import os
 import sys
+import torch
+
+# Решение для PyTorch 2.6+ - monkey patch для torch.load
+original_torch_load = torch.load
+
+def patched_torch_load(*args, **kwargs):
+    if 'weights_only' in kwargs:
+        kwargs['weights_only'] = False
+    else:
+        # Если параметр не передан, добавляем его
+        kwargs['weights_only'] = False
+    return original_torch_load(*args, **kwargs)
+
+torch.load = patched_torch_load
+
 from loguru import logger
 
 class YOLODetector:
@@ -27,6 +41,7 @@ class YOLODetector:
         self.model = None
         self.camera = None
         self.converter = None
+        self.pylon = None
         self.frame_count = 0
         self.start_time = time.time()
         
@@ -68,8 +83,6 @@ class YOLODetector:
         """Загрузка модели YOLO с поддержкой PyTorch 2.6+"""
         try:
             from ultralytics import YOLO
-            import torch
-            import torch.serialization
             
             logger.info(f"🔄 Loading model: {self.model_path}")
             
@@ -78,46 +91,31 @@ class YOLODetector:
                 logger.error(f"❌ Model file not found: {self.model_path}")
                 raise FileNotFoundError(f"Model file not found: {self.model_path}")
             
-            # Попытка загрузки с безопасными глобалами для PyTorch 2.6+
-            try:
-                # Добавляем необходимые классы в безопасные глобалы
-                from ultralytics.nn.tasks import DetectionModel
-                torch.serialization.add_safe_globals([DetectionModel])
-                
-                self.model = YOLO(self.model_path)
-                logger.info("✅ Model loaded successfully with safe_globals")
-                
-            except Exception as e1:
-                logger.warning(f"⚠️ Safe globals method failed: {e1}")
-                
-                # Fallback: отключаем безопасную загрузку
-                try:
-                    # Устанавливаем переменную окружения ДО импорта
-                    os.environ['TORCH_LOAD_DISABLE_SAFE_GLOBALS'] = '1'
-                    # Переимпортируем YOLO после установки переменной
-                    from ultralytics import YOLO
-                    self.model = YOLO(self.model_path)
-                    logger.info("✅ Model loaded with disabled safe globals")
-                    
-                except Exception as e2:
-                    logger.error(f"❌ All loading methods failed: {e2}")
-                    
-                    # Финальный fallback: используем официальную модель
-                    logger.info("🔄 Falling back to official YOLOv8 model")
-                    self.model = YOLO('yolov8n.pt')
-                    logger.info("✅ Official YOLOv8 model loaded")
+            # Загрузка модели с нашим monkey patch
+            self.model = YOLO(self.model_path)
+            logger.info("✅ Model loaded successfully")
             
             logger.info(f"📊 Model info: {len(self.model.names)} classes")
             logger.info(f"📋 Classes: {list(self.model.names.values())}")
             
         except Exception as e:
             logger.error(f"❌ Model loading failed: {e}")
-            raise
+            
+            # Fallback: попробуем загрузить официальную модель
+            try:
+                logger.info("🔄 Attempting to load official YOLOv8 model as fallback...")
+                from ultralytics import YOLO
+                self.model = YOLO('yolov8n.pt')
+                logger.info("✅ Official YOLOv8 model loaded as fallback")
+            except Exception as fallback_error:
+                logger.error(f"❌ Fallback model also failed: {fallback_error}")
+                raise
     
     def setup_camera(self):
         """Настройка камеры Basler с обработкой ошибок"""
         try:
             from pypylon import pylon
+            self.pylon = pylon  # Сохраняем ссылку на pylon
             
             logger.info("🔄 Initializing camera...")
             
@@ -171,11 +169,12 @@ class YOLODetector:
             logger.error(f"❌ Camera setup failed: {e}")
             logger.info("🔄 Continuing in simulation mode")
             self.camera = None
+            self.pylon = None
             return True  # Продолжаем в режиме симуляции
     
     def capture_frame(self):
         """Захват кадра с камеры или симуляция"""
-        if self.camera is None:
+        if self.camera is None or self.pylon is None:
             logger.debug("📷 Camera is None - using simulation mode")
             return self._get_test_image()
         
@@ -183,10 +182,10 @@ class YOLODetector:
             # Проверяем что камера активна
             if not self.camera.IsGrabbing():
                 logger.warning("🔄 Camera was not grabbing, restarting...")
-                self.camera.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
+                self.camera.StartGrabbing(self.pylon.GrabStrategy_LatestImageOnly)
                 time.sleep(0.1)  # Даем время на запуск
             
-            grab_result = self.camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
+            grab_result = self.camera.RetrieveResult(5000, self.pylon.TimeoutHandling_ThrowException)
             
             if grab_result.GrabSucceeded():
                 image = self.converter.Convert(grab_result)
@@ -207,7 +206,7 @@ class YOLODetector:
                 logger.info("🔄 Attempting to restart camera...")
                 if self.camera.IsGrabbing():
                     self.camera.StopGrabbing()
-                self.camera.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
+                self.camera.StartGrabbing(self.pylon.GrabStrategy_LatestImageOnly)
             except Exception as restart_error:
                 logger.error(f"❌ Failed to restart camera: {restart_error}")
             
@@ -422,7 +421,7 @@ class YOLODetector:
         logger.info("🧹 Cleaning up resources...")
         
         try:
-            if self.camera is not None:
+            if self.camera is not None and self.pylon is not None:
                 if self.camera.IsGrabbing():
                     self.camera.StopGrabbing()
                 self.camera.Close()
@@ -443,20 +442,3 @@ class YOLODetector:
         logger.info(f"  - Camera status: {self.get_camera_status()}")
         
         logger.info("✅ All resources cleaned up")
-
-
-# Пример использования
-if __name__ == "__main__":
-    # Тестовый запуск
-    detector = YOLODetector(
-        model_path="models/best.pt",
-        conf_threshold=0.5,
-        headless=True
-    )
-    
-    try:
-        detector.run(save_results=True, interval=2.0)
-    except KeyboardInterrupt:
-        print("Stopped by user")
-    finally:
-        detector.cleanup()
